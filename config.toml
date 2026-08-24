@@ -1,6 +1,11 @@
 [game]
 
 seed = 42
+min_players = 3
+max_players = 6
+points_for_guessing_correctly = 20
+points_for_successful_trick = 10
+points_for_unsuccessfuly_trick = -10
 
 [deck]
 

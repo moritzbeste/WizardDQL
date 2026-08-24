@@ -12,8 +12,10 @@ class Game:
     def __init__(self, n_players=3):
         self.n_players = n_players
         self._set_config()
+        self.scores = np.zeros(self.n_players, dtype=np.float32)
         self.reset_game()
-        self.deck = Deck(n_players=n_players, seed=self.g_conf["seed"])
+        self.deck = Deck(n_players=n_players, seed=self.g_conf['seed'])
+        self.min_players, self.max_players = self.get_player_range()
     
     def _set_config(self):
         with self.CONFIG_PATH.open('rb') as file:
@@ -24,11 +26,31 @@ class Game:
         self.round_number = 1
         self.round        = None
         self.trump_card   = None
+        self.scores[:]    = 0.0
     
     def setup_round(self):
+        self.priority     = (self.priority + 1) % self.n_players 
         self.round        = _Round(n_players=self.n_players, deck=self.deck, round_number=self.round_number, priority=self.priority)
         self.round_number = self.round_number + 1
-        self.priority     = (self.priority + 1) % self.n_players 
+    
+    def finish_round(self):
+        self.round.evaluate_trick()
+        bids   = self.round.bids
+        tricks = self.round.tricks_won
+        for i in range(self.n_players):
+            if bids[i] == tricks[i]:
+                self.scores[i] += self.g_conf['points_for_guessing_correctly'] + tricks[i] * self.g_conf['points_for_successful_trick']
+            else: 
+                self.scores[i] += abs(bids[i] - tricks[i]) * self.g_conf['points_for_unsuccessfuly_trick']
+        self.round = None
+
+    def get_player_range(self):
+        return (self.g_conf['min_players'], self.g_conf['max_players'])
+
+    def get_hand(self, player_index):
+        if self.round is None:
+            raise ValueError("The round has not started!")
+        return self.round.get_hand(player_index=player_index)
 
 
 class _Round:
@@ -40,7 +62,6 @@ class _Round:
         self.round_number = round_number
         self.trick_number = 1
         self.priority     = priority
-        
         self._setup()
     
     def _setup(self):
@@ -48,6 +69,7 @@ class _Round:
         self.trump        = self.deck.reveal_trump_card(self.round_number)
         self.bids         = [None for _ in range(self.n_players)]
         self.tricks_won   = [   0 for _ in range(self.n_players)]
+        self.played_cards = []
     
     def _check_player_index(self, player_index, check_priority):
         if not isinstance(player_index, (int, np.integer)) or isinstance(player_index, bool):
@@ -68,38 +90,59 @@ class _Round:
     def _winning_card_index(self, cards, i1, i2):
         _, c1, s1 = cards[i1]
         _, c2, s2 = cards[i2]
-        # a wizard cannot be beaten
-        # if both are wizards, the earlier one wins
+
+        # ====================================================================================================
+        # the rules encoded here differ slightly from the original rules
+        # they are house rules that I prefer
+        # a more readable explanation of the house rules is provided in README.md
+        # ====================================================================================================
+
+        # the first wizard always wins
         if self.deck.is_wizard(c1):
             return i1
-        # a fool cannot beat anything
+        # a fool as the second card cannot win
         if s2 == self.deck.fool_suit:
             return i1
-        # same suit: higher card wins
+        # we know: 
+        # - i2 is not a fool
+        # -- therefore if i1 is a fool, i2 wins because anything other than a fool beats a fool
+        if s1 == self.deck.fool_suit:
+            return i2
         if s1 == s2:
-            # important case to consider:
-            # since wizards are treated as trump suit, we can get a case where s1 == s2
-            # but s2 is a wizard. This is okay, since the values associated with all 
-            # wizards are higher than any suit card. Furthermore, it is important to consider
-            # that the values also encode the suit. So Blue goes from 0-12, Green goes from 
-            # 13-25 etc. However since the suits are identical this does not matter
+            # we know:
+            # - s1 == s2
+            # - numerical compaison of wizards and fools is unsafe because precedence matters over encoding
+            # -- i1 is not a wizard
+            # -- i1, i2 are not fools
+            # --- therefore the cases
+            # ---- s1 == s2 == wizards
+            # ---- s1 == s2 == fools
+            # --- are no longer possible
+            # - wizards have trump suit
+            # -- possible case: s1 is trump, s2 is wizard
+            # --- since wizards are encoded with a higher value the comparison is numerically safe
             if c2 > c1:
                 return i2
             return i1
-        # different suits
-        # wizard beats everything except an earlier wizard,
-        # which was handled above
+        # we know:
+        # - s1 != s2
+        # -- therefore the winner is decided based on suit
+        # - i1 is not a wizard
+        # -- therefore i2 could be a wizard in which case it wins
         if self.deck.is_wizard(c2):
             return i2
-        # trump beats non trump
+        # - i2 is not a wizard
+        # - trump wins over non trump
         if s1 == self.trump:
             return i1
         if s2 == self.trump:
             return i2
-        # leading suit beats cards that do not follow suit
-        if s1 == self.trick.first_suit:
-            return i1
-        return i2
+        # - s1, s2 are not the trump suit
+        # - i1 is the current winner
+        # -- therefore, s1 must be the leading suit
+        # - since s1 != s2, s2 is not the leading suit
+        # -- therefore, i1 wins
+        return i1
 
     def get_hand_reprs(self):
         return [self.deck.cards_string_repr(hand) for hand in self.player_hands]
@@ -113,6 +156,11 @@ class _Round:
         bid                     = self._check_bid(bid)
         self.bids[player_index] = bid
         self.priority           = (self.priority + 1) % self.n_players
+    
+    def get_bids(self):
+        if any(bid is None for bid in self.bids):
+            return None
+        return self.bids
     
     def start_trick(self):
         if any(bid is None for bid in self.bids):
@@ -139,6 +187,7 @@ class _Round:
         self.trick.play_card(player_index=player_index, card=card, suit=self.deck.get_suit(card))
         # update card position in players hands
         self.player_hands[:, card] = -1 # -1 indicates already played
+        self.played_cards.append((self.priority, card))
         self.priority = (self.priority + 1) % self.n_players
     
     def evaluate_trick(self):

@@ -20,7 +20,7 @@ class Deck:
             count = c['count']
             self.special_card_range[card_type] = (n_cards, n_cards + count - 1)
             n_cards += count
-        self.deck = np.arange(n_cards, dtype=np.uint8)
+        self.deck = np.arange(n_cards, dtype=np.int8)
     
     def _shuffle_deck(self):
         self.rng.shuffle(self.deck)
@@ -93,7 +93,7 @@ class Deck:
         card = self._check_card(card)
         wizard_start, wizard_end = self.special_card_range['Z']
         return wizard_start <= card <= wizard_end
-
+    
     def get_suit(self, card, trump):
         card = self._check_card(card)
         if card < self.n_suit_cards:
@@ -133,7 +133,7 @@ class Deck:
             self._shuffle_deck()
 
         dealt_cards = self.deck[:total_cards]
-        vectors = np.zeros((self.n_players, len(self.deck)), dtype=np.uint8)
+        vectors = np.zeros((self.n_players, len(self.deck)), dtype=np.int8)
         vectors[np.arange(self.n_players).repeat(n_cards), dealt_cards] = 1
         return vectors
 
