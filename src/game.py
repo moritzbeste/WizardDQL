@@ -65,7 +65,7 @@ class _Round:
             warnings.warn(f"The bid {bid} > {self.round_number} was submitted by player {self.priority}")
         return bid
     
-    def _compare(self, cards, i1, i2):
+    def _winning_card_index(self, cards, i1, i2):
         _, c1, s1 = cards[i1]
         _, c2, s2 = cards[i2]
         # a wizard cannot be beaten
@@ -77,6 +77,12 @@ class _Round:
             return i1
         # same suit: higher card wins
         if s1 == s2:
+            # important case to consider:
+            # since wizards are treated as trump suit, we can get a case where s1 == s2
+            # but s2 is a wizard. This is okay, since the values associated with all 
+            # wizards are higher than any suit card. Furthermore, it is important to consider
+            # that the values also encode the suit. So Blue goes from 0-12, Green goes from 
+            # 13-25 etc. However since the suits are identical this does not matter
             if c2 > c1:
                 return i2
             return i1
@@ -85,7 +91,7 @@ class _Round:
         # which was handled above
         if self.deck.is_wizard(c2):
             return i2
-        # trump beats non-trump
+        # trump beats non trump
         if s1 == self.trump:
             return i1
         if s2 == self.trump:
@@ -138,15 +144,16 @@ class _Round:
     def evaluate_trick(self):
         if self.trick is None:
             raise ValueError("There is no active trick.")
+        cards = self.trick.get_cards()
         if len(cards) != self.n_players:
             raise ValueError(f"Cannot evaluate an incomplete trick. Expected {self.n_players} cards, got {len(cards)}.")
-        cards = self.trick.get_cards()
         highest = 0
         for i in range(1, len(cards), 1):
-            highest = self._compare(cards, highest, i)
+            highest = self._winning_card_index(cards, highest, i)
         self.trick = None
         winner = cards[highest][0]
         self.tricks_won[winner] += 1
+        self.priority = winner
         return winner
 
 
