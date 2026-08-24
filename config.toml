@@ -1,0 +1,25 @@
+[game]
+
+seed = 42
+
+[deck]
+
+# cards:
+# 1 - 13 blue
+# 1 - 13 green
+# 1 - 13 red
+# 1 - 13 yellow
+# 4 Fool
+# 4 Wizard
+
+n_cards_per_suit = 13
+n_suits = 4
+suits = ['B', 'G', 'R', 'Y']
+
+[deck.special_cards.N] # fools
+name = 'N'
+count = 4
+
+[deck.special_cards.Z] # wizards
+name = 'Z'
+count = 4
