@@ -13,8 +13,9 @@ class Game:
         self.n_players = n_players
         self._set_config()
         self.scores = np.zeros(self.n_players, dtype=np.float32)
-        self.reset_game()
         self.deck = Deck(n_players=n_players, seed=self.g_conf['seed'])
+        self.total_rounds = len(self.deck.deck) // self.n_players
+        self.reset_game()
         self.min_players, self.max_players = self.get_player_range()
     
     def _set_config(self):
@@ -27,11 +28,11 @@ class Game:
         self.round        = None
         self.trump_card   = None
         self.scores[:]    = 0.0
+        self.rounds_left = self.total_rounds
     
     def setup_round(self):
         self.priority     = (self.priority + 1) % self.n_players 
         self.round        = _Round(n_players=self.n_players, deck=self.deck, round_number=self.round_number, priority=self.priority)
-        self.round_number = self.round_number + 1
     
     def finish_round(self):
         self.round.evaluate_trick()
@@ -43,6 +44,8 @@ class Game:
             else: 
                 self.scores[i] += abs(bids[i] - tricks[i]) * self.g_conf['points_for_unsuccessfuly_trick']
         self.round = None
+        self.round_number = self.round_number + 1
+        self.rounds_left  = self.rounds_left  - 1
 
     def get_player_range(self):
         return (self.g_conf['min_players'], self.g_conf['max_players'])
@@ -51,6 +54,11 @@ class Game:
         if self.round is None:
             raise ValueError("The round has not started!")
         return self.round.get_hand(player_index=player_index)
+
+    def get_winner(self):
+        if self.rounds_left != 0:
+            return None
+        return np.argmax(self.scores)
 
 
 class _Round:

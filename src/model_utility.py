@@ -1,11 +1,19 @@
 import numpy as np
+from scipy.special import logsumexp
 import torch
+from pathlib import Path
+import tomllib
 
-class AgentState:
+class AgentUtility:
+    CONFIG_PATH = Path(__file__).parent.parent / 'config.toml'
+
     def __init__(self, game, player_index):
+        self._set_a_config()
         self.game = game
         self.player_index = player_index
         self.relative_indices = [(self.player_index + i) % self.game.n_players for i in range(self.game.n_players)]
+        self.previous_lead = 0.0
+        self.target_lead = 0.0
 
     def generate_state_rerpesentation(self):
         # one hot encoding of the state of each card 
@@ -47,6 +55,12 @@ class AgentState:
         # tricks won by each player in current round
         # - shape: max_players (6,)
 
+        # total number of rounds
+        # - shape: scalar (1,)
+
+        # rounds left
+        # - shape: scalar (1,)
+
         encoded_hand         = self._encode_hand()
         encoded_player_mask  = self._encode_player_mask()
         encoded_priority     = self._encode_priority()
@@ -58,6 +72,8 @@ class AgentState:
         encoded_n_tricks     = self._encode_number_tricks()
         encoded_bids         = self._encode_bids()
         encoded_wins         = self._encode_tricks_won()
+        encoded_n_rounds     = self._encode_total_n_rounds()
+        encoded_rounds_left  = self._encode_rounds_left()
 
         state = np.concatenate([
             encoded_hand.flatten(),
@@ -71,6 +87,8 @@ class AgentState:
             encoded_n_tricks,
             encoded_bids.flatten(),
             encoded_wins,
+            encoded_n_rounds,
+            encoded_rounds_left,
         ])
 
         return torch.from_numpy(state)
@@ -158,3 +176,72 @@ class AgentState:
         encoded_wins[:len(wins)] = wins
         encoded_wins[self.relative_indices]
         return encoded_wins
+    
+    def _encode_total_n_rounds(self):
+        encoded_total_rounds    = np.zeros(1, dtype=np.float32)
+        encoded_total_rounds[0] = self.game.total_rounds
+        return encoded_total_rounds
+
+    def _encode_rounds_left(self):
+        encoded_rounds_left    = np.zeros(1, dtype=np.float32)
+        encoded_rounds_left[0] = self.game.rounds_left
+        return encoded_rounds_left
+
+    def _set_a_config(self):
+        with self.CONFIG_PATH.open('rb') as file:
+            self.a_conf = tomllib.load(file)['agent']
+    
+    def _growth_target(self):
+        n_players = self.game.n_players
+        base_lead_growth_per_trick = self.a_conf['base_lead_growth_per_trick']
+        alpha = self.a_conf['alpha']
+        game_round = self.game.round_number - 1
+        return base_lead_growth_per_trick * game_round * alpha / n_players
+    
+    def _asymmetric_reward(self, error, temperature, penalty):
+        x = error / temperature
+        if x >= 0:
+            return x + 0.75 * x ** 2
+        else:
+            return x - penalty * x ** 2
+
+    def _r_dense(self, lead):
+        n_players = self.game.n_players
+        # local reward
+        target_lead_growth = self._growth_target()
+        lead_growth = lead - self.previous_lead
+        growth_error = lead_growth - target_lead_growth
+        local_reward = self._asymmetric_reward(growth_error, self.a_conf['growth_temperature'], self.a_conf['growth_penalty'])
+        # global reward
+        self.target_lead += target_lead_growth
+        target_error = lead - self.target_lead
+        global_reward = self._asymmetric_reward(target_error, self.a_conf['position_temperature'], self.a_conf['position_penalty'])
+        progress = (self.game.round_number - 1) / self.game.total_rounds
+        position_weight = self.a_conf['position_weight'] * (0.25 + 0.75 * progress**2)
+        return self.a_conf['growth_weight'] * local_reward + position_weight * global_reward
+
+    def reward(self):
+        scores = self.game.scores[self.relative_indices]
+        n_players = self.game.n_players
+        beta = self.a_conf['softmin_sharpness']
+        differences = scores[0] - scores[1:]
+        # softmin
+        lead = -(logsumexp(-beta * differences) - np.log(len(differences))) / beta
+        # dense reward
+        reward_dense = self._r_dense(lead)
+        # terminal reward
+        W = self.a_conf['win_reward']
+        winner = self.game.get_winner()
+        if winner is None:
+            reward_terminal = 0.0
+            self.previous_lead = lead
+        else:
+            if winner == self.relative_indices[0]:
+                reward_terminal = W
+            else:
+                reward_terminal = -W
+            # game is over
+            # reset lead history
+            self.target_lead = 0.0
+            self.previous_lead = 0.0
+        return reward_dense + reward_terminal
