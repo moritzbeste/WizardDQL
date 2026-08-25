@@ -72,6 +72,13 @@ class Deck:
             raise ValueError(f"Suit {suit} does not exist. Valid suit IDs are 0-{self.d_conf['n_suits'] - 1}, {self.fool_suit}, & {self.wizard_suit}.")
         return suit
 
+    # this method is public because it is used by the round to verify that a chosen suit is valid
+    def check_colored_suit(self, suit):
+        suit = self._check_suit(suit)
+        if 0 <= suit < self.d_conf['n_suits']:
+            raise ValueError("The given suit is not colored.")
+        return suit
+
     def _check_n_cards(self, n_cards):
         if not isinstance(n_cards, (int, np.integer)) or isinstance(n_cards, bool):
             raise ValueError(f"n_cards must be an integer, got {type(n_cards).__name__}.")
@@ -107,9 +114,6 @@ class Deck:
     # ====================================================================================================
     # INFORMATION AND QUERIES
     # ====================================================================================================
-
-    def check_suit(self, suit):
-        return self._check_suit(suit)
 
     def cards_string_repr(self, cards):
         if self.cards_dict is None:

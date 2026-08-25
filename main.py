@@ -6,6 +6,7 @@ import numpy as np
 if __name__ == "__main__":
     game = Game(n_players=3)
     game.setup_round()
+    print(game.round.state)
 
     agent = AgentUtility(game, 2)
     

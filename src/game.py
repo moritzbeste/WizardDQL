@@ -3,7 +3,7 @@ import numpy as np
 import random
 import warnings
 from pathlib import Path
-from enum import Enum
+from enum import Enum, auto
 
 from src.deck import Deck
 

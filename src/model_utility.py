@@ -32,7 +32,6 @@ class AgentUtility:
         with self.CONFIG_PATH.open('rb') as file:
             self.a_conf = tomllib.load(file)['agent']
 
-
     # ====================================================================================================
     # STATE REPRESENTATION
     # ====================================================================================================
@@ -208,9 +207,9 @@ class AgentUtility:
         bids = self.game.round.get_bids()
         for player, bid in enumerate(bids):
             if bid is None:
-                encoded_bids[1, player] = 1
+                encoded_bids[player, 1] = 1
             else:
-                encoded_bids[0, player] = bid
+                encoded_bids[player, 0] = bid
         return encoded_bids[self.absolute_to_relative]
 
     def _encode_tricks_won(self):
