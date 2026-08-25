@@ -2,9 +2,18 @@ import tomllib
 import numpy as np
 from pathlib import Path
 
+
 class Deck:
+
+    # ====================================================================================================
+    # CLASS CONSTANTS
+    # ====================================================================================================
+
     CONFIG_PATH = Path(__file__).parent.parent / 'config.toml'
-    cards_dict  = None
+
+    # ====================================================================================================
+    # INITIALIZATION AND SETUP
+    # ====================================================================================================
 
     def __init__(self, n_players, seed):
         self.n_players = n_players
@@ -12,7 +21,12 @@ class Deck:
         self._set_deck()
         self.rng = np.random.default_rng(seed)
         self.n_suit_cards = self.d_conf['n_cards_per_suit'] * self.d_conf['n_suits']
+        self.cards_dict = None
     
+    def _set_config(self):
+        with self.CONFIG_PATH.open('rb') as file:
+            self.d_conf = tomllib.load(file)['deck']
+
     def _set_deck(self):
         n_cards = self.d_conf['n_suits'] * self.d_conf['n_cards_per_suit']
         self.special_card_range = {}
@@ -21,13 +35,6 @@ class Deck:
             self.special_card_range[card_type] = (n_cards, n_cards + count - 1)
             n_cards += count
         self.deck = np.arange(n_cards, dtype=np.int8)
-    
-    def _shuffle_deck(self):
-        self.rng.shuffle(self.deck)
-    
-    def _set_config(self):
-        with self.CONFIG_PATH.open('rb') as file:
-            self.d_conf = tomllib.load(file)['deck']
 
     def _generate_cards_dict(self):
         self.cards_dict = {}
@@ -45,6 +52,10 @@ class Deck:
                 self.cards_dict[val] = card_type
                 val += 1
 
+    # ====================================================================================================
+    # CHECKING AND VALIDATION
+    # ====================================================================================================
+
     def _check_card(self, card):
         if not isinstance(card, (int, np.integer)) or isinstance(card, bool):
             raise ValueError(f"Card must be an integer, got {type(card).__name__}.")
@@ -58,7 +69,7 @@ class Deck:
             raise ValueError(f"Suit must be an integer, got {type(suit).__name__}.")
         suit = int(suit)
         if suit < self.fool_suit or suit > self.wizard_suit:
-            raise ValueError(f"Suit {suit} does not exist. Valid suit IDs are 0-{self.d_conf['n_suits'] - 1}.")
+            raise ValueError(f"Suit {suit} does not exist. Valid suit IDs are 0-{self.d_conf['n_suits'] - 1}, {self.fool_suit}, & {self.wizard_suit}.")
         return suit
 
     def _check_n_cards(self, n_cards):
@@ -77,8 +88,28 @@ class Deck:
         if len(player_hand) != len(self.deck):
             raise ValueError(
                 f"Invalid hand vector length. Expected {len(self.deck)}, got {len(player_hand)}.")
-        if not np.all((player_hand == 0) | (player_hand == 1)):
-            raise ValueError("player_hand must contain only 0 and 1.")
+        if not np.all(np.isin(player_hand, [-1, 0, 1])):
+            raise ValueError("player_hand must contain only -1, 0 and 1.")
+
+    # ====================================================================================================
+    # INTERNAL DECK LOGIC
+    # ====================================================================================================
+
+    def _shuffle_deck(self):
+        self.rng.shuffle(self.deck)
+
+    def _get_colored_suit(self, card):
+        card = self._check_card(card)
+        if card < self.n_suit_cards:
+            return card // self.d_conf['n_cards_per_suit']
+        return None
+
+    # ====================================================================================================
+    # INFORMATION AND QUERIES
+    # ====================================================================================================
+
+    def check_suit(self, suit):
+        return self._check_suit(suit)
 
     def cards_string_repr(self, cards):
         if self.cards_dict is None:
@@ -94,7 +125,7 @@ class Deck:
         wizard_start, wizard_end = self.special_card_range['Z']
         return wizard_start <= card <= wizard_end
     
-    def get_suit(self, card, trump):
+    def get_effective_suit(self, card, trump):
         card = self._check_card(card)
         if card < self.n_suit_cards:
             return card // self.d_conf['n_cards_per_suit']
@@ -124,6 +155,10 @@ class Deck:
         has_wizard = np.any(player_hand[wizard_start:wizard_end + 1])
         return has_suit or has_wizard
 
+    # ====================================================================================================
+    # DECK ACTIONS
+    # ====================================================================================================
+
     def deal_hands(self, n_cards, shuffle=True):
         n_cards = self._check_n_cards(n_cards)
         total_cards = n_cards * self.n_players
@@ -137,12 +172,16 @@ class Deck:
         vectors[np.arange(self.n_players).repeat(n_cards), dealt_cards] = 1
         return vectors
 
-    def reveal_trump_card(self, n_cards):
+    def reveal_trump_suit(self, n_cards):
         n_cards = self._check_n_cards(n_cards)
         n_cards_dealt = n_cards * self.n_players
         if n_cards_dealt >= len(self.deck):
             return self.wizard_suit
-        return self.deck[n_cards_dealt]
+        return self._get_colored_suit(self.deck[n_cards_dealt])
+
+    # ====================================================================================================
+    # PROPERTIES
+    # ====================================================================================================
 
     @property
     def wizard_suit(self):

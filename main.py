@@ -8,6 +8,7 @@ if __name__ == "__main__":
     game.setup_round()
 
     agent = AgentUtility(game, 2)
-    game.scores[:] = [0, 0, 0]
+    
+    game.scores[:] = [4, 2, 1]
     agent.generate_state_rerpesentation()
     print(agent.reward())

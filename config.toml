@@ -1,6 +1,7 @@
 [game]
 
-seed = 42
+seed_deck = 42
+seed_priority = 0
 min_players = 3
 max_players = 6
 points_for_guessing_correctly = 20
@@ -37,7 +38,7 @@ softmin_sharpness =  0.05
 growth_temperature = 20.0
 growth_penalty = 0.75
 position_temperature = 30.0
-position_penalty = 0.75
+position_penalty = 0.40
 growth_weight = 1.0
-position_weight = 0.5
+position_weight = 0.75
 win_reward =  100.0
