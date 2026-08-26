@@ -1,36 +1,63 @@
 import numpy as np
-from scipy.special import logsumexp
-import torch
-from pathlib import Path
-import tomllib
 
-
-class AgentUtility:
+class TrickingAgentUtility:
 
     # ====================================================================================================
-    # CLASS CONSTANTS
+    # INITIALIZATION
     # ====================================================================================================
 
-    CONFIG_PATH = Path(__file__).parent.parent / 'config.toml'
+    def __init__(self, utility):
+        self.utility = utility
+        self.player_weights = self._compute_player_weights()
+        self.player_bids = np.array(self.game.round.get_bids())[self.relative_to_absolute]
+        self.player_tricks = np.zeros(self.game.n_players)
+
+    @property
+    def game(self):
+        return self.utility.game
+
+    @property
+    def player_index(self):
+        return self.utility.player_index
+
+    @property
+    def a_conf(self):
+        return self.utility.a_conf
+
+    @property
+    def g_conf(self):
+        return self.utility.g_conf
+
+    @property
+    def absolute_to_relative(self):
+        return self.utility.absolute_to_relative
+    
+    @property
+    def relative_to_absolute(self):
+        return self.utility.relative_to_absolute
+
+    def _compute_player_weights(self):
+        scores = self.game.scores[self.relative_to_absolute]
+        temp = self.a_conf['weight_temperature']
+        weights = np.exp((scores - np.max(scores)) / temp)
+        weights /= np.sum(weights)
+        return weights
 
     # ====================================================================================================
-    # INITIALIZATION AND SETUP
+    # REWARD
     # ====================================================================================================
 
-    def __init__(self, game, player_index):
-        self._set_a_config()
-        self.game = game
-        self.player_index = player_index
-        relative_indices = [(self.player_index + i) % self.game.n_players for i in range(self.game.n_players)]
-        self.absolute_to_relative = np.empty(self.game.n_players, dtype=int)
-        for relative, absolute in enumerate(relative_indices):
-            self.absolute_to_relative[absolute] = relative
-        self.previous_lead = 0.0
-        self.target_lead = 0.0
-
-    def _set_a_config(self):
-        with self.CONFIG_PATH.open('rb') as file:
-            self.a_conf = tomllib.load(file)['agent']
+    def _current_round_scores(self):
+        correct = self.player_bids == self.player_tricks
+        return np.where(
+            correct,
+            self.player_tricks * self.g_conf['points_for_successful_trick'] + self.g_conf['points_for_guessing_correctly'],
+            self.g_conf['points_for_unsuccessfuly_trick'] * np.abs(self.player_bids - self.player_tricks)
+        )
+    
+    def reward(self):
+        round_scores = self._current_round_scores()
+        return round_scores[0] * self.player_weights[0] - np.sum(np.delete(round_scores, 0) * np.delete(self.player_weights, 0))
 
     # ====================================================================================================
     # STATE REPRESENTATION
@@ -122,8 +149,6 @@ class AgentUtility:
             encoded_rounds_left,
         ])
 
-        print(state.shape)
-
         return torch.from_numpy(state)
 
     # ====================================================================================================
@@ -195,11 +220,11 @@ class AgentUtility:
             encoded_scores = np.zeros_like(scores)
         else:
             encoded_scores = (scores - min_score) / (max_score - min_score)
-        return encoded_scores[self.absolute_to_relative]
+        return encoded_scores[self.relative_to_absolute]
     
     def _encode_leads(self):
         leads = np.array([self._compute_lead(p) for p in range(self.game.n_players)], dtype=np.float32)
-        return leads[self.absolute_to_relative]
+        return leads[self.relative_to_absolute]
 
     def _encode_bids(self):
         max_players = self.game.max_players
@@ -210,14 +235,14 @@ class AgentUtility:
                 encoded_bids[player, 1] = 1
             else:
                 encoded_bids[player, 0] = bid
-        return encoded_bids[self.absolute_to_relative]
+        return encoded_bids[self.relative_to_absolute]
 
     def _encode_tricks_won(self):
         max_players = self.game.max_players
         encoded_wins = np.zeros(max_players, dtype=np.float32)
         wins = self.game.round.tricks_won
         encoded_wins[:len(wins)] = wins
-        return encoded_wins[self.absolute_to_relative]
+        return encoded_wins[self.relative_to_absolute]
 
     # ====================================================================================================
     # GAME PROGRESS ENCODING
@@ -242,70 +267,4 @@ class AgentUtility:
         encoded_rounds_left    = np.zeros(1, dtype=np.float32)
         encoded_rounds_left[0] = self.game.rounds_left / self.game.total_rounds
         return encoded_rounds_left
-
-    # ====================================================================================================
-    # INTERNAL REWARD COMPUTATION
-    # ====================================================================================================
-
-    def _growth_target(self):
-        n_players = self.game.n_players
-        base_lead_growth_per_trick = self.a_conf['base_lead_growth_per_trick']
-        alpha = self.a_conf['alpha']
-        game_round = self.game.round_number - 1
-        return base_lead_growth_per_trick * game_round * alpha / n_players
-    
-    def _asymmetric_reward(self, error, temperature, penalty):
-        x = error / temperature
-        if x >= 0:
-            return x + 0.75 * x ** 2
-        else:
-            return x - penalty * x ** 2
-
-    def _r_dense(self, lead):
-        n_players = self.game.n_players
-        # local reward
-        target_lead_growth = self._growth_target()
-        lead_growth = lead - self.previous_lead
-        growth_error = lead_growth - target_lead_growth
-        local_reward = self._asymmetric_reward(growth_error, self.a_conf['growth_temperature'], self.a_conf['growth_penalty'])
-        # global reward
-        self.target_lead += target_lead_growth
-        target_error = lead - self.target_lead
-        global_reward = self._asymmetric_reward(target_error, self.a_conf['position_temperature'], self.a_conf['position_penalty'])
-        progress = (self.game.round_number - 1) / self.game.total_rounds
-        position_weight = self.a_conf['position_weight'] * (0.25 + 0.75 * progress**2)
-        return self.a_conf['growth_weight'] * local_reward + position_weight * global_reward
-
-    def _compute_lead(self, player_index):
-        scores = self.game.scores
-        differences = scores[player_index] - np.delete(scores, player_index)
-        beta = self.a_conf['softmin_sharpness']
-        # softmin
-        lead = -(logsumexp(-beta * differences) - np.log(len(differences))) / beta
-        return lead
-
-    # ====================================================================================================
-    # REWARD
-    # ====================================================================================================
-
-    def reward(self):
-        # compute lead
-        lead = self._compute_lead(player_index=self.player_index)
-        # dense reward
-        reward_dense = self._r_dense(lead)
-        # terminal reward
-        W = self.a_conf['win_reward']
-        winner = self.game.get_winner()
-        if winner is None:
-            reward_terminal = 0.0
-            self.previous_lead = lead
-        else:
-            if winner == self.player_index:
-                reward_terminal = W
-            else:
-                reward_terminal = -W
-            # game is over
-            # reset lead history
-            self.target_lead = 0.0
-            self.previous_lead = 0.0
-        return reward_dense + reward_terminal
+        

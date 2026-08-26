@@ -32,6 +32,8 @@ count = 4
 
 [agent]
 
+weight_temperature = 50
+
 base_lead_growth_per_trick = 2.0
 alpha = 3.0
 softmin_sharpness =  0.05

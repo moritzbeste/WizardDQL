@@ -1,5 +1,5 @@
 from src.game import Game
-from src.model_utility import AgentUtility
+from src.models_utility.agent_utility import AgentUtility
 import time
 import numpy as np
 
@@ -10,6 +10,6 @@ if __name__ == "__main__":
 
     agent = AgentUtility(game, 2)
     
-    game.scores[:] = [4, 2, 1]
-    agent.generate_state_rerpesentation()
-    print(agent.reward())
+    game.scores[:] = [100,200,350]
+    game.round.bids = [2, 3, 4]
+    
