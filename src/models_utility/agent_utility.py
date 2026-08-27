@@ -4,6 +4,7 @@ import tomllib
 
 from src.models_utility.tricking_agent_utility import TrickingAgentUtility
 from src.models_utility.bidding_agent_utility  import BiddingAgentUtility
+from src.models_utility.trump_agent_utility  import TrumpAgentUtility
 
 class AgentUtility:
 
@@ -26,6 +27,7 @@ class AgentUtility:
 
         self.tricking_agent = TrickingAgentUtility(self)
         self.bidding_agent  = BiddingAgentUtility(self)
+        self.trump_agent    = TrumpAgentUtility(self)
         
     def _set_index_conversion(self):
         self.relative_to_absolute = np.array([(self.player_index + i) % self.game.n_players for i in range(self.game.n_players)])
