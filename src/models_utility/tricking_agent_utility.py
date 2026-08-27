@@ -185,7 +185,7 @@ class TrickingAgentUtility:
         return encoded_trump
 
     def _encode_leading_suit(self):
-        leading_suit = self.game.round.trick.first_suit if self.game.round.trick is not None else None
+        leading_suit = self.game.round.trick.leading_suit if self.game.round.trick is not None else None
         encoded_leading_suit = np.zeros(self.game.deck.d_conf["n_suits"] + 2, dtype=np.float32) # + 1 for wizard suit, + 1 for None
         if leading_suit is None:
             encoded_leading_suit[-1] = 1
@@ -267,4 +267,23 @@ class TrickingAgentUtility:
         encoded_rounds_left    = np.zeros(1, dtype=np.float32)
         encoded_rounds_left[0] = self.game.rounds_left / self.game.total_rounds
         return encoded_rounds_left
-        
+
+    # ====================================================================================================
+    # GET MOVE
+    # ====================================================================================================
+
+    def _get_legal_move_mask(self):
+        hand = self.game.round.player_hands[self.player_index]
+        cards = np.where(hand == 1)[0]
+        mask = np.zeros(len(hand), dtype=np.int8)
+        for card in cards:
+            mask[card] = self.game.round.can_play_card(self.player_index, card)
+        return mask
+    
+    def get_move(self, q_values, epsilon):
+        mask = self._get_legal_move_mask()
+        legal_cards = np.where(mask == 1)[0]
+        if np.random.random() < epsilon:
+            return np.random.choice(legal_cards)
+        masked_q_values = np.where(mask, q_values, -np.inf)
+        return np.argmax(masked_q_values)

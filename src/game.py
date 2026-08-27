@@ -25,16 +25,18 @@ class Game:
     # ====================================================================================================
 
     def __init__(self, n_players=3):
+        self._set_config()
+        self.min_players, self.max_players = self.get_player_range()
         self.n_players = n_players
         self.state = self.State.SETUP
-        self._set_config()
         seed = self.g_conf['seed_priority']
         self.rng = np.random.default_rng(seed)
+
         self.scores = np.zeros(self.n_players, dtype=np.float32)
         self.deck = Deck(n_players=n_players, seed=self.g_conf['seed_deck'])
         self.total_rounds = len(self.deck.deck) // self.n_players
+
         self.reset_game()
-        self.min_players, self.max_players = self.get_player_range()
         self._advance_state()
     
     def _set_config(self):
@@ -43,10 +45,10 @@ class Game:
 
     def reset_game(self):
         self.priority     = self.rng.integers(self.n_players)
-        self.round_number = 1
+        self.round_number = 10
         self.round        = None
         self.scores[:]    = 0.0
-        self.rounds_left = self.total_rounds
+        self.rounds_left  = self.total_rounds
 
     # ====================================================================================================
     # STATE MANAGEMENT
@@ -74,8 +76,8 @@ class Game:
     # ====================================================================================================
 
     def setup_round(self):
-        self.priority     = (self.priority + 1) % self.n_players 
-        self.round        = _Round(n_players=self.n_players, deck=self.deck, round_number=self.round_number, priority=self.priority)
+        self.priority = (self.priority + 1) % self.n_players 
+        self.round    = _Round(n_players=self.n_players, deck=self.deck, round_number=self.round_number, priority=self.priority)
     
     def finish_round(self):
         bids   = self.round.bids
@@ -206,7 +208,7 @@ class _Round:
     def _check_trick(self):
         if self.trick is None:
             raise ValueError("There is no active trick.")
-        if len(self.cards) >= self.n_players:
+        if len(self.trick.cards) >= self.n_players:
             raise ValueError("Cannot play a card when the trick is already full!")
     
     def _check_state(self, desired_state):
@@ -308,6 +310,9 @@ class _Round:
     def get_hand_reprs(self):
         return [self.deck.cards_string_repr(hand) for hand in self.player_hands]
     
+    def get_vector_reprs(self, cards):
+        return self.deck.cards_string_repr(cards)
+    
     def get_hand(self, player_index):
         self._check_player_index(player_index=player_index, check_priority=False)
         return self.player_hands[player_index]
@@ -319,19 +324,16 @@ class _Round:
         self._check_trick()
         self._check_state(self.State.TRICK)
         self._check_player_index(player_index=player_index, check_priority=True)
-        # check if player has the played card
-        if not self.player_hands[player_index][card] == 1:
+        if self.player_hands[player_index][card] != 1:
             return False
-        # check if player is allowed to play the card
         played_suit = self.deck.get_effective_suit(card, self.trump)
-        if (
-            played_suit != self.deck.fool_suit
-            and self.trick.first_suit is not None
-            and played_suit != self.trick.first_suit
-            and self.deck.player_has_suit(self.player_hands[player_index], self.trick.first_suit, self.trump)
-            ):
-            return False
-        return True
+        if played_suit == self.deck.fool_suit:
+            return True
+        if self.trick.leading_suit is None:
+            return True
+        if played_suit == self.trick.leading_suit:
+            return True
+        return not self.deck.player_has_suit(self.player_hands[player_index], self.trick.leading_suit, self.trump)
 
     # ====================================================================================================
     # PLAYER ACTIONS
@@ -346,7 +348,6 @@ class _Round:
 
     def bid(self, player_index, bid):
         self._check_player_index(player_index=player_index, check_priority=True)
-        self._check_bid(self, bid)
         bid                     = self._check_bid(bid)
         self.bids[player_index] = bid
         self.priority           = (self.priority + 1) % self.n_players
@@ -370,14 +371,14 @@ class _Trick:
         self.fool_suit   = fool_suit
         self.wizard_suit = wizard_suit
         self.cards       = []
-        self.first_suit  = None
+        self.leading_suit  = None
 
     def play_card(self, player_index, card, suit):
         if len(self.cards) >= self.n_players:
             raise ValueError("Cannot play a card when the trick is already full!")
-        if self.first_suit is None and suit != self.fool_suit and suit != self.wizard_suit:
+        if self.leading_suit is None and suit != self.fool_suit and suit != self.wizard_suit:
             # card decides first suit
-            self.first_suit = suit
+            self.leading_suit = suit
         self.cards.append((player_index, card, suit))
     
     def get_cards(self):
