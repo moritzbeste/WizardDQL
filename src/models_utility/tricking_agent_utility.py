@@ -65,9 +65,6 @@ class TrickingAgentUtility(AgentUtility):
         # normalized encoding of score
         # - shape: max_players (6,)
 
-        # relative lead for each player
-        # - shape: max_players (6,)
-
         # round number
         # - shape: scalar (1,)
 
@@ -94,7 +91,6 @@ class TrickingAgentUtility(AgentUtility):
         encoded_trump           = self._encode_trump()
         encoded_leading_suit    = self._encode_leading_suit()
         encoded_scores          = self._encode_score()
-        encoded_leads           = self._encode_leads()
         encoded_fraction_rounds = self._encode_fraction_rounds()
         encoded_fraction_tricks = self._encode_fraction_tricks()
         encoded_bids            = self._encode_bids()
@@ -111,7 +107,6 @@ class TrickingAgentUtility(AgentUtility):
             encoded_trump,
             encoded_leading_suit,
             encoded_scores,
-            encoded_leads,
             encoded_fraction_rounds,
             encoded_fraction_tricks,
             encoded_bids.flatten(),
@@ -121,11 +116,18 @@ class TrickingAgentUtility(AgentUtility):
         ])
 
         return torch.from_numpy(state)
+    
+    # overwrite
+    def input_output_length(self):
+        state = self.generate_state_rerpesentation()
+        output_size = len(self.game.deck.deck)
+        return (len(state), output_size)
 
     # ====================================================================================================
     # CARD AND TRICK ENCODING
     # ====================================================================================================
 
+    # overwrite
     def _encode_hand(self):
         current_hand = self.game.get_hand(self.player_index)
         encoded_hand = np.zeros((3, len(self.game.deck.deck)), dtype=np.float32)
@@ -150,11 +152,6 @@ class TrickingAgentUtility(AgentUtility):
                 encoded_recency[card] = 1.0 - trick_number / self.game.round.trick_number
         return encoded_recency
 
-    def _encode_trump(self):
-        trump = self.game.round.trump
-        encoded_trump = np.zeros(self.game.deck.d_conf["n_suits"] + 1, dtype=np.float32) # + 1 for wizard suit 
-        return encoded_trump
-
     def _encode_leading_suit(self):
         leading_suit = self.game.round.trick.leading_suit if self.game.round.trick is not None else None
         encoded_leading_suit = np.zeros(self.game.deck.d_conf["n_suits"] + 2, dtype=np.float32) # + 1 for wizard suit, + 1 for None
@@ -168,46 +165,6 @@ class TrickingAgentUtility(AgentUtility):
     # PLAYER ENCODING
     # ====================================================================================================
 
-    def _encode_player_mask(self):
-        max_players = self.game.max_players
-        n_players   = self.game.n_players
-        player_mask = np.zeros(max_players, dtype=np.float32)
-        player_mask[:n_players] = 1
-        return player_mask
-
-    def _encode_priority(self):
-        max_players = self.game.max_players
-        priority_encoding = np.zeros(max_players, dtype=np.float32)
-        priority_index = self.game.round.priority
-        relative_priority = self.absolute_to_relative[priority_index]
-        priority_encoding[relative_priority] = 1
-        return priority_encoding
-
-    def _encode_score(self):
-        scores = np.asarray(self.game.scores, dtype=np.float32)
-        min_score = scores.min()
-        max_score = scores.max()
-        if max_score == min_score:
-            encoded_scores = np.zeros_like(scores)
-        else:
-            encoded_scores = (scores - min_score) / (max_score - min_score)
-        return encoded_scores[self.relative_to_absolute]
-    
-    def _encode_leads(self):
-        leads = np.array([self._compute_lead(p) for p in range(self.game.n_players)], dtype=np.float32)
-        return leads[self.relative_to_absolute]
-
-    def _encode_bids(self):
-        max_players = self.game.max_players
-        encoded_bids = np.zeros((max_players, 2), dtype=np.float32)
-        bids = self.game.round.bids
-        for player, bid in enumerate(bids):
-            if bid is None:
-                encoded_bids[player, 1] = 1
-            else:
-                encoded_bids[player, 0] = bid
-        return encoded_bids[self.relative_to_absolute]
-
     def _encode_tricks_won(self):
         max_players = self.game.max_players
         encoded_wins = np.zeros(max_players, dtype=np.float32)
@@ -216,28 +173,13 @@ class TrickingAgentUtility(AgentUtility):
         return encoded_wins[self.relative_to_absolute]
 
     # ====================================================================================================
-    # GAME PROGRESS ENCODING
+    # ROUND PROGRESS ENCODING
     # ====================================================================================================
-
-    def _encode_fraction_rounds(self):
-        encoded_fraction_rounds    = np.zeros(1, dtype=np.float32)
-        encoded_fraction_rounds[0] = self.game.round_number / self.game.total_rounds
-        return encoded_fraction_rounds
 
     def _encode_fraction_tricks(self):
         encoded_fraction_tricks    = np.zeros(1, dtype=np.float32)
         encoded_fraction_tricks[0] = (self.game.round_number - self.game.round.trick_number) / self.game.round_number
         return encoded_fraction_tricks
-
-    def _encode_total_n_rounds(self):
-        encoded_total_rounds    = np.zeros(1, dtype=np.float32)
-        encoded_total_rounds[0] = self.game.total_rounds
-        return encoded_total_rounds
-
-    def _encode_rounds_left(self):
-        encoded_rounds_left    = np.zeros(1, dtype=np.float32)
-        encoded_rounds_left[0] = (self.game.total_rounds - self.game.round_number) / self.game.total_rounds
-        return encoded_rounds_left
 
     # ====================================================================================================
     # MOVE MASK

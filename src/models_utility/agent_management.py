@@ -32,7 +32,21 @@ class AgentManagement:
         self.trump_agent    = TrumpAgentUtility(self)
         
     def _set_index_conversion(self):
-        self.relative_to_absolute = np.array([(self.player_index + i) % self.game.n_players for i in range(self.game.n_players)])
-        self.absolute_to_relative = np.empty(self.game.n_players, dtype=int)
-        for relative, absolute in enumerate(self.relative_to_absolute):
+        n_players = self.game.n_players
+        max_players = self.game.max_players
+        self.relative_to_absolute = np.full(
+            max_players,
+            -1,
+            dtype=int
+        )
+        for relative in range(n_players):
+            self.relative_to_absolute[relative] = (
+                self.player_index + relative
+            ) % n_players
+        self.absolute_to_relative = np.empty(
+            n_players,
+            dtype=int
+        )
+        for relative in range(n_players):
+            absolute = self.relative_to_absolute[relative]
             self.absolute_to_relative[absolute] = relative

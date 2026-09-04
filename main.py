@@ -10,5 +10,5 @@ if __name__ == "__main__":
     game.scores[:] = [10, 20, 0]
 
     agent = AgentManagement(game, 0)
-    agent.bidding_agent.get_move(1, 1)
+    print(agent.bidding_agent.input_output_length())
     
