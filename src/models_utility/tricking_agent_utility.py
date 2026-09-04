@@ -1,41 +1,18 @@
 import numpy as np
 import torch
 
-class TrickingAgentUtility:
+from src.models_utility.agent_utility import AgentUtility
+
+class TrickingAgentUtility(AgentUtility):
 
     # ====================================================================================================
     # INITIALIZATION
     # ====================================================================================================
 
-    def __init__(self, utility):
-        self.utility = utility
+    def __init__(self, manager):
+        super().__init__(manager)
         self.player_weights = self._compute_player_weights()
-        self.player_bids = np.array(self.game.round.get_bids())[self.relative_to_absolute]
-        self.player_tricks = np.zeros(self.game.n_players)
-
-    @property
-    def game(self):
-        return self.utility.game
-
-    @property
-    def player_index(self):
-        return self.utility.player_index
-
-    @property
-    def a_conf(self):
-        return self.utility.a_conf
-
-    @property
-    def g_conf(self):
-        return self.utility.g_conf
-
-    @property
-    def absolute_to_relative(self):
-        return self.utility.absolute_to_relative
-    
-    @property
-    def relative_to_absolute(self):
-        return self.utility.relative_to_absolute
+        self.player_bids = np.array(self.game.round.bids)[self.relative_to_absolute]
 
     def _compute_player_weights(self):
         scores = self.game.scores[self.relative_to_absolute]
@@ -47,15 +24,8 @@ class TrickingAgentUtility:
     # ====================================================================================================
     # REWARD
     # ====================================================================================================
-
-    def _current_round_scores(self):
-        correct = self.player_bids == self.player_tricks
-        return np.where(
-            correct,
-            self.player_tricks * self.g_conf['points_for_successful_trick'] + self.g_conf['points_for_guessing_correctly'],
-            self.g_conf['points_for_unsuccessfuly_trick'] * np.abs(self.player_bids - self.player_tricks)
-        )
     
+    # overwrite
     def reward(self):
         round_scores = self._current_round_scores()
         return round_scores[0] * self.player_weights[0] - np.sum(np.delete(round_scores, 0) * np.delete(self.player_weights, 0))
@@ -230,7 +200,7 @@ class TrickingAgentUtility:
     def _encode_bids(self):
         max_players = self.game.max_players
         encoded_bids = np.zeros((max_players, 2), dtype=np.float32)
-        bids = self.game.round.get_bids()
+        bids = self.game.round.bids
         for player, bid in enumerate(bids):
             if bid is None:
                 encoded_bids[player, 1] = 1
@@ -266,11 +236,11 @@ class TrickingAgentUtility:
 
     def _encode_rounds_left(self):
         encoded_rounds_left    = np.zeros(1, dtype=np.float32)
-        encoded_rounds_left[0] = self.game.rounds_left / self.game.total_rounds
+        encoded_rounds_left[0] = (self.game.total_rounds - self.game.round_number) / self.game.total_rounds
         return encoded_rounds_left
 
     # ====================================================================================================
-    # GET MOVE
+    # MOVE MASK
     # ====================================================================================================
 
     def _get_legal_move_mask(self):
@@ -280,11 +250,3 @@ class TrickingAgentUtility:
         for card in cards:
             mask[card] = self.game.round.can_play_card(self.player_index, card)
         return mask
-    
-    def get_move(self, q_values, epsilon):
-        mask = self._get_legal_move_mask()
-        legal_cards = np.where(mask == 1)[0]
-        if np.random.random() < epsilon:
-            return np.random.choice(legal_cards)
-        masked_q_values = np.where(mask, q_values, -np.inf)
-        return np.argmax(masked_q_values)

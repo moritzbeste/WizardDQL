@@ -31,16 +31,8 @@ name = 'Z'
 count = 4
 
 [agent]
+# probability to explore random moves
 
 weight_temperature = 50
-
-base_lead_growth_per_trick = 2.0
-alpha = 3.0
-softmin_sharpness =  0.05
-growth_temperature = 20.0
-growth_penalty = 0.75
-position_temperature = 30.0
-position_penalty = 0.40
-growth_weight = 1.0
-position_weight = 0.75
-win_reward =  100.0
+score_difference_weight = 10
+round_scores_weight = 1

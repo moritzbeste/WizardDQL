@@ -6,14 +6,13 @@ from pathlib import Path
 from enum import Enum, auto
 
 from src.deck import Deck
+from src.utility import get_config
 
 class Game:
 
     # ====================================================================================================
     # CLASS CONSTANTS AND STATE
     # ====================================================================================================
-
-    CONFIG_PATH = Path(__file__).parent.parent / 'config.toml'
 
     class State(Enum):
         SETUP    = auto()
@@ -25,7 +24,7 @@ class Game:
     # ====================================================================================================
 
     def __init__(self, n_players=3):
-        self._set_config()
+        self.g_conf = get_config('game')
         self.min_players, self.max_players = self.get_player_range()
         self.n_players = n_players
         self.state = self.State.SETUP
@@ -38,17 +37,12 @@ class Game:
 
         self.reset_game()
         self._advance_state()
-    
-    def _set_config(self):
-        with self.CONFIG_PATH.open('rb') as file:
-            self.g_conf = tomllib.load(file)['game']
 
     def reset_game(self):
         self.priority     = self.rng.integers(self.n_players)
-        self.round_number = 10
+        self.round_number = 1
         self.round        = None
         self.scores[:]    = 0.0
-        self.rounds_left  = self.total_rounds
 
     # ====================================================================================================
     # STATE MANAGEMENT
@@ -62,7 +56,7 @@ class Game:
                     self.state = self.State.ROUND
                 case self.State.ROUND:
                     if self.round is None:
-                        if self.rounds_left == 0:
+                        if self.round_number == self.total_rounds:
                             self.state = self.State.FINISHED
                         else:
                             self.setup_round()
@@ -89,7 +83,7 @@ class Game:
                 self.scores[i] += abs(bids[i] - tricks[i]) * self.g_conf['points_for_unsuccessfuly_trick']
         self.round = None
         self.round_number = self.round_number + 1
-        self.rounds_left  = self.rounds_left  - 1
+        self.priority     = (self.priority + 1) % self.n_players 
         self._advance_state()
 
     # ====================================================================================================
@@ -105,9 +99,9 @@ class Game:
         return self.round.get_hand(player_index=player_index)
 
     def get_winner(self):
-        if self.rounds_left != 0:
-            return None
-        return np.argmax(self.scores)
+        if self.state == self.State.FINISHED:
+            return np.argmax(self.scores)
+        return None
 
 
 class _Round:
@@ -142,7 +136,7 @@ class _Round:
         self.player_hands     = self.deck.deal_hands(self.round_number, shuffle=True)
         self.trump            = self.deck.reveal_trump_suit(self.round_number)
         self.bids             = [None for _ in range(self.n_players)]
-        self.tricks_won       = [   0 for _ in range(self.n_players)]
+        self.tricks_won       = np.zeros(self.n_players)
         self.played_cards     = []
         self.completed_tricks = []
 
@@ -316,9 +310,6 @@ class _Round:
     def get_hand(self, player_index):
         self._check_player_index(player_index=player_index, check_priority=False)
         return self.player_hands[player_index]
-    
-    def get_bids(self):
-        return self.bids
 
     def can_play_card(self, player_index, card):
         self._check_trick()

@@ -1,15 +1,8 @@
-import tomllib
 import numpy as np
-from pathlib import Path
 
+from src.utility import get_config
 
 class Deck:
-
-    # ====================================================================================================
-    # CLASS CONSTANTS
-    # ====================================================================================================
-
-    CONFIG_PATH = Path(__file__).parent.parent / 'config.toml'
 
     # ====================================================================================================
     # INITIALIZATION AND SETUP
@@ -17,15 +10,11 @@ class Deck:
 
     def __init__(self, n_players, seed):
         self.n_players = n_players
-        self._set_config()
+        self.d_conf = get_config('deck')
         self._set_deck()
         self.rng = np.random.default_rng(seed)
         self.n_suit_cards = self.d_conf['n_cards_per_suit'] * self.d_conf['n_suits']
         self.cards_dict = None
-    
-    def _set_config(self):
-        with self.CONFIG_PATH.open('rb') as file:
-            self.d_conf = tomllib.load(file)['deck']
 
     def _set_deck(self):
         n_cards = self.d_conf['n_suits'] * self.d_conf['n_cards_per_suit']

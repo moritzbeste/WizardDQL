@@ -1,10 +1,10 @@
-# WizardRL
+# WizardDQL
 
 ## HOUSE RULES
 
 ### SUMMARY
 
-The rules encoded in ./src/game.py (specifically _Round._winning_card_index(...) and _Round.play_card(...)), ./src/deck.py (specifically Deck.get_suit(...), Deck.player_has_suit(...), Deck.reveal_trump(...), Deck.wizard_suit, and Deck.fool_suit) and used to generate the legal moves mask (TODO: fill in methods) are intentionally different from the official rules of WIZARD. The behavior described below is the specification used by the program:
+The rules encoded in ./src/game.py (specifically _Round._winning_card_index(...), and _Round.can_play_card(...), ./src/deck.py (specifically Deck.get_suit(...), Deck.player_has_suit(...), Deck.reveal_trump(...), Deck.wizard_suit, and Deck.fool_suit) are intentionally different from the official rules of WIZARD. The behavior described below is the specification used by the program:
 
 For the purposes of the follow suit rule, wizards are members of the trump suit. Their trick winning behavior remains that of a WIZARD: a wizard wins against any non wizard card.
 

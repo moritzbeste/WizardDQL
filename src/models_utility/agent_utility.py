@@ -1,44 +1,77 @@
+from abc import ABC, abstractmethod
 import numpy as np
-from pathlib import Path
-import tomllib
 
-from src.models_utility.tricking_agent_utility import TrickingAgentUtility
-from src.models_utility.bidding_agent_utility  import BiddingAgentUtility
-from src.models_utility.trump_agent_utility  import TrumpAgentUtility
-
-class AgentUtility:
+# Abstract method for agent utility classes
+class AgentUtility(ABC):
 
     # ====================================================================================================
-    # CLASS CONSTANTS
+    # INITIALIZATION
     # ====================================================================================================
 
-    CONFIG_PATH = Path(__file__).parent.parent.parent / 'config.toml'
+    def __init__(self, manager):
+        self.manager = manager
 
+    @property
+    def game(self):
+        return self.manager.game
+
+    @property
+    def player_index(self):
+        return self.manager.player_index
+
+    @property
+    def a_conf(self):
+        return self.manager.a_conf
+
+    @property
+    def g_conf(self):
+        return self.manager.g_conf
+
+    @property
+    def absolute_to_relative(self):
+        return self.manager.absolute_to_relative
+    
+    @property
+    def relative_to_absolute(self):
+        return self.manager.relative_to_absolute
+    
     # ====================================================================================================
-    # INITIALIZATION AND SETUP
+    # REWARD
     # ====================================================================================================
 
-    def __init__(self, game, player_index):
-        self.game = game
-        self.player_index = player_index
-        self._set_index_conversion()
-        self._set_a_config()
-        self._set_g_config()
+    def _current_round_scores(self):
+        player_tricks = self.game.round.tricks_won[self.relative_to_absolute]
+        correct = self.player_bids == player_tricks
+        return np.where(
+            correct,
+            player_tricks * self.g_conf['points_for_successful_trick'] + self.g_conf['points_for_guessing_correctly'],
+            self.g_conf['points_for_unsuccessfuly_trick'] * np.abs(self.player_bids - player_tricks)
+        )
 
-        self.tricking_agent = TrickingAgentUtility(self)
-        self.bidding_agent  = BiddingAgentUtility(self)
-        self.trump_agent    = TrumpAgentUtility(self)
-        
-    def _set_index_conversion(self):
-        self.relative_to_absolute = np.array([(self.player_index + i) % self.game.n_players for i in range(self.game.n_players)])
-        self.absolute_to_relative = np.empty(self.game.n_players, dtype=int)
-        for relative, absolute in enumerate(self.relative_to_absolute):
-            self.absolute_to_relative[absolute] = relative
+    def reward(self):
+        scores = self.game.scores[self.relative_to_absolute]
+        differences = scores[0] - np.delete(scores, 0)
+        round_scores = self._current_round_scores()
+        round_differences = round_scores[0] - np.delete(round_scores, 0)
+        return (
+            self.a_conf['score_difference_weight'] * np.sum(differences) + 
+            self.a_conf['round_scores_weight'] * np.sum(round_differences)
+        )
+    
+    # ====================================================================================================
+    # GET MOVE
+    # ====================================================================================================
 
-    def _set_a_config(self):
-        with self.CONFIG_PATH.open('rb') as file:
-            self.a_conf = tomllib.load(file)['agent']
+    @abstractmethod
+    def _get_legal_move_mask(self):
+        pass
 
-    def _set_g_config(self):
-        with self.CONFIG_PATH.open('rb') as file:
-            self.g_conf = tomllib.load(file)['game']
+    def get_move(self, q_values):
+        epsilon = self.a_conf['epsilon']
+        mask = self._get_legal_move_mask()
+        legal_moves = np.where(mask == 1)[0]
+        if np.random.random() < epsilon:
+            return np.random.choice(legal_moves)
+        masked_q_values = np.where(mask, q_values, -np.inf)
+        return np.argmax(masked_q_values)
+    

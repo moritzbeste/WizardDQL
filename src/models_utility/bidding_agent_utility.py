@@ -1,31 +1,22 @@
 import numpy as np
 import torch
 
-class BiddingAgentUtility:
+from src.models_utility.agent_utility import AgentUtility
+
+class BiddingAgentUtility(AgentUtility):
 
     # ====================================================================================================
     # INITIALIZATION
     # ====================================================================================================
 
-    def __init__(self, utility):
-        self.utility = utility
-
-    @property
-    def game(self):
-        return self.utility.game
-
-    @property
-    def player_index(self):
-        return self.utility.player_index
-
-    @property
-    def absolute_to_relative(self):
-        return self.utility.absolute_to_relative
-    
-    @property
-    def relative_to_absolute(self):
-        return self.utility.relative_to_absolute
+    def __init__(self, manager):
+        super().__init__(manager)
 
     # ====================================================================================================
-    # REWARD
+    # MOVE MASK
     # ====================================================================================================
+
+    def _get_legal_move_mask(self):
+        mask = np.zeros(self.game.total_rounds, dtype=np.int8)
+        mask[:self.game.round_number] = 1
+        return mask
