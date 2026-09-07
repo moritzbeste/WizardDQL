@@ -9,6 +9,5 @@ if __name__ == "__main__":
     print(game.round.player_hands)
     game.scores[:] = [10, 20, 0]
 
-    agent = AgentManagement(game, 0)
-    print(agent.bidding_agent.input_output_length())
+    agent = AgentManagement()
     

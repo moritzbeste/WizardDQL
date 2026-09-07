@@ -9,14 +9,14 @@ class BiddingAgentUtility(AgentUtility):
     # INITIALIZATION
     # ====================================================================================================
 
-    def __init__(self, manager):
-        super().__init__(manager)
+    def __init__(self, manager, player_index):
+        super().__init__(manager=manager, player_index=player_index)
 
     # ====================================================================================================
     # STATE REPRESENTATION
     # ====================================================================================================
 
-    def generate_state_rerpesentation(self):
+    def _generate_state_rerpesentation(self, game_index):
         # one hot encoding of the state of each card 
         # - (in agents hand, already played, unknown (in opponents hand or in the deck))
         # - shape: n_states * n_cards (3, 60)
@@ -46,15 +46,15 @@ class BiddingAgentUtility(AgentUtility):
         # rounds left
         # - shape: scalar (1,)
 
-        encoded_hand            = self._encode_hand()
-        encoded_player_mask     = self._encode_player_mask()
-        encoded_priority        = self._encode_priority()
-        encoded_trump           = self._encode_trump()
-        encoded_scores          = self._encode_score()
-        encoded_fraction_rounds = self._encode_fraction_rounds()
-        encoded_bids            = self._encode_bids()
-        encoded_n_rounds        = self._encode_total_n_rounds()
-        encoded_rounds_left     = self._encode_rounds_left()
+        encoded_hand            = self._encode_hand(game_index=game_index)
+        encoded_player_mask     = self._encode_player_mask(game_index=game_index)
+        encoded_priority        = self._encode_priority(game_index=game_index)
+        encoded_trump           = self._encode_trump(game_index=game_index)
+        encoded_scores          = self._encode_score(game_index=game_index)
+        encoded_fraction_rounds = self._encode_fraction_rounds(game_index=game_index)
+        encoded_bids            = self._encode_bids(game_index=game_index)
+        encoded_n_rounds        = self._encode_total_n_rounds(game_index=game_index)
+        encoded_rounds_left     = self._encode_rounds_left(game_index=game_index)
 
         state = np.concatenate([
             encoded_hand.flatten(),
@@ -74,7 +74,7 @@ class BiddingAgentUtility(AgentUtility):
     # MOVE MASK
     # ====================================================================================================
 
-    def _get_legal_move_mask(self):
-        mask = np.zeros(self.game.total_rounds, dtype=np.int8)
-        mask[:self.game.round_number] = 1
+    def _get_legal_move_mask(self, game_index):
+        mask = np.zeros(self._game(game_index).total_rounds, dtype=np.int8)
+        mask[:self._game(game_index).round_number] = 1
         return mask

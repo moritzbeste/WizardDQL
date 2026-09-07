@@ -8,31 +8,35 @@ from enum import Enum, auto
 from src.deck import Deck
 from src.utility import get_config
 
+# ====================================================================================================
+# GAME STATE
+# ====================================================================================================
+
+class GameState(Enum):
+    SETUP    = auto()
+    ROUND    = auto()
+    FINISHED = auto()
+
+
 class Game:
-
-    # ====================================================================================================
-    # CLASS CONSTANTS AND STATE
-    # ====================================================================================================
-
-    class State(Enum):
-        SETUP    = auto()
-        ROUND    = auto()
-        FINISHED = auto()
 
     # ====================================================================================================
     # INITIALIZATION AND SETUP
     # ====================================================================================================
 
-    def __init__(self, n_players=3):
+    def __init__(self, n_players=3, deck=None):
         self.g_conf = get_config('game')
         self.min_players, self.max_players = self.get_player_range()
         self.n_players = n_players
-        self.state = self.State.SETUP
+        self.state = GameState.SETUP
         seed = self.g_conf['seed_priority']
         self.rng = np.random.default_rng(seed)
 
         self.scores = np.zeros(self.n_players, dtype=np.float32)
-        self.deck = Deck(n_players=n_players, seed=self.g_conf['seed_deck'])
+        if deck is None:
+            self.deck = Deck(n_players=n_players, seed=self.g_conf['seed_deck'])
+        else:
+            self.deck = deck
         self.total_rounds = len(self.deck.deck) // self.n_players
 
         self.reset_game()
@@ -51,18 +55,19 @@ class Game:
     def _advance_state(self):
         while True:
             match self.state:
-                case self.State.SETUP:
+                case GameState.SETUP:
                     self.setup_round()
-                    self.state = self.State.ROUND
-                case self.State.ROUND:
-                    if self.round is None:
+                    self.state = GameState.ROUND
+                case GameState.ROUND:
+                    if self.round.state == RoundState.FINISHED:
+                        self.finish_round()
                         if self.round_number == self.total_rounds:
-                            self.state = self.State.FINISHED
+                            self.state = GameState.FINISHED
                         else:
                             self.setup_round()
                     else:
                         return
-                case self.State.FINISHED:
+                case GameState.FINISHED:
                     return
 
     # ====================================================================================================
@@ -71,7 +76,7 @@ class Game:
 
     def setup_round(self):
         self.priority = (self.priority + 1) % self.n_players 
-        self.round    = _Round(n_players=self.n_players, deck=self.deck, round_number=self.round_number, priority=self.priority)
+        self.round    = _Round(n_players=self.n_players, game=self, round_number=self.round_number, priority=self.priority)
     
     def finish_round(self):
         bids   = self.round.bids
@@ -99,33 +104,35 @@ class Game:
         return self.round.get_hand(player_index=player_index)
 
     def get_winner(self):
-        if self.state == self.State.FINISHED:
+        if self.state == GameState.FINISHED:
             return np.argmax(self.scores)
         return None
+
+
+# ====================================================================================================
+# STATE
+# ====================================================================================================
+
+class RoundState(Enum):
+    SETUP        = auto()
+    CHOOSE_TRUMP = auto()
+    BIDDING      = auto()
+    TRICK        = auto()
+    FINISHED     = auto()
 
 
 class _Round:
 
     # ====================================================================================================
-    # STATE
-    # ====================================================================================================
-
-    class State(Enum):
-        SETUP         = auto()
-        CHOOSE_TRUMP  = auto()
-        BIDDING       = auto()
-        TRICK         = auto()
-        FINISHED      = auto()
-
-    # ====================================================================================================
     # INITIALIZATION AND SETUP
     # ====================================================================================================
 
-    def __init__(self, n_players, deck, round_number, priority):
+    def __init__(self, n_players, game, round_number, priority):
         self.n_players    = n_players
-        self.state        = self.State.SETUP
+        self.state        = RoundState.SETUP
         self.trick        = None
-        self.deck         = deck
+        self.game         = game
+        self.deck         = game.deck
         self.round_number = round_number
         self.trick_number = 0
         self.priority     = priority
@@ -148,29 +155,30 @@ class _Round:
     def _advance_state(self):
         while True:
             match self.state:
-                case self.State.SETUP:
+                case RoundState.SETUP:
                     if self.trump is None:
-                        self.state = self.State.CHOOSE_TRUMP
+                        self.state = RoundState.CHOOSE_TRUMP
                     else:
-                        self.state = self.State.BIDDING
-                case self.State.CHOOSE_TRUMP:
+                        self.state = RoundState.BIDDING
+                case RoundState.CHOOSE_TRUMP:
                     if self.trump is None:
                         return
-                    self.state = self.State.BIDDING
-                case self.State.BIDDING:
+                    self.state = RoundState.BIDDING
+                case RoundState.BIDDING:
                     if any(bid is None for bid in self.bids):
                         return
-                    self.state = self.State.TRICK
+                    self.state = RoundState.TRICK
                     self._start_trick()
-                case self.State.TRICK:
+                case RoundState.TRICK:
                     if not self.trick.trick_completed():
                         return
                     self._evaluate_trick()
                     if self.trick_number == self.round_number:
-                        self.state = self.State.FINISHED
+                        self.state = RoundState.FINISHED
                     else:
                         self._start_trick()
-                case self.State.FINISHED:
+                case RoundState.FINISHED:
+                    self.game.finish_round()
                     return
 
     # ====================================================================================================
@@ -186,7 +194,7 @@ class _Round:
             raise ValueError(f"Player with index {player_index} does not have priority! Player {self.priority} has priority")
     
     def _check_bid(self, bid):
-        if not self.state == self.State.BIDDING:
+        if not self.state == RoundState.BIDDING:
             raise ValueError(f"The round is not in the bidding state. It is in state {self.state.name}")
         if not isinstance(bid, (int, np.integer)) or isinstance(bid, bool):
             raise ValueError(f"bid must be an integer, got {type(bid).__name__}.")
@@ -214,14 +222,14 @@ class _Round:
     # ====================================================================================================
 
     def _start_trick(self):
-        self._check_state(self.State.TRICK)
+        self._check_state(RoundState.TRICK)
         if self.trick is not None:
             raise ValueError(f"There exists an active trick. Cannot create a new one!")
         self.trick_number = self.trick_number + 1
         self.trick = _Trick(n_players=self.n_players, fool_suit=self.deck.fool_suit, wizard_suit=self.deck.wizard_suit)
 
     def _evaluate_trick(self):
-        self._check_state
+        self._check_state(RoundState.TRICK)
         self._check_trick()
         cards = self.trick.get_cards()
         if len(cards) != self.n_players:
@@ -313,7 +321,7 @@ class _Round:
 
     def can_play_card(self, player_index, card):
         self._check_trick()
-        self._check_state(self.State.TRICK)
+        self._check_state(RoundState.TRICK)
         self._check_player_index(player_index=player_index, check_priority=True)
         if self.player_hands[player_index][card] != 1:
             return False
@@ -345,9 +353,10 @@ class _Round:
         self._advance_state()
     
     def play_card(self, player_index, card):
-        self._check_state(self.State.TRICK)
+        self._check_state(RoundState.TRICK)
         if not self.can_play_card(player_index, card):
             raise ValueError(f"Player with index {player_index} cannot play card {card}!")
+        played_suit = self.deck.get_effective_suit(card, self.trump)
         self.trick.play_card(player_index=player_index, card=card, suit=played_suit)
         # update card position in players hands
         self.player_hands[:, card] = -1 # -1 indicates already played

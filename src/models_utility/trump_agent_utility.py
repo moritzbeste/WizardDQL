@@ -11,15 +11,15 @@ class TrumpAgentUtility(AgentUtility):
     # INITIALIZATION
     # ====================================================================================================
 
-    def __init__(self, manager):
-        super().__init__(manager)
+    def __init__(self, manager, player_index):
+        super().__init__(manager=manager, player_index=player_index)
         self.d_conf = get_config('deck')
 
     # ====================================================================================================
     # STATE REPRESENTATION
     # ====================================================================================================
 
-    def generate_state_rerpesentation(self):
+    def _generate_state_rerpesentation(self, game_index):
         # one hot encoding of the state of each card 
         # - (in agents hand, already played, unknown (in opponents hand or in the deck))
         # - shape: n_states * n_cards (3, 60)
@@ -39,12 +39,12 @@ class TrumpAgentUtility(AgentUtility):
         # rounds left
         # - shape: scalar (1,)
 
-        encoded_hand            = self._encode_hand()
-        encoded_player_mask     = self._encode_player_mask()
-        encoded_scores          = self._encode_score()
-        encoded_fraction_rounds = self._encode_fraction_rounds()
-        encoded_n_rounds        = self._encode_total_n_rounds()
-        encoded_rounds_left     = self._encode_rounds_left()
+        encoded_hand            = self._encode_hand(game_index=game_index)
+        encoded_player_mask     = self._encode_player_mask(game_index=game_index)
+        encoded_scores          = self._encode_score(game_index=game_index)
+        encoded_fraction_rounds = self._encode_fraction_rounds(game_index=game_index)
+        encoded_n_rounds        = self._encode_total_n_rounds(game_index=game_index)
+        encoded_rounds_left     = self._encode_rounds_left(game_index=game_index)
 
         state = np.concatenate([
             encoded_hand.flatten(),
@@ -61,5 +61,5 @@ class TrumpAgentUtility(AgentUtility):
     # MOVE MASK
     # ====================================================================================================
 
-    def _get_legal_move_mask(self):
+    def _get_legal_move_mask(self, _game_index):
         return np.ones(self.d_conf['n_suits'], dtype=np.int8)

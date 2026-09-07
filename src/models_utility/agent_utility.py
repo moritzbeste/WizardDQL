@@ -8,16 +8,24 @@ class AgentUtility(ABC):
     # INITIALIZATION
     # ====================================================================================================
 
-    def __init__(self, manager):
-        self.manager = manager
+    def __init__(self, manager, player_index):
+        self.manager      = manager
+        self.player_index = player_index
+        self._set_index_conversion()
+    
+    def _set_index_conversion(self):
+        n_players = self._game.n_players
+        max_players = self._game.max_players
+        self.relative_to_absolute = np.full(max_players, -1, dtype=int)
+        for relative in range(n_players):
+            self.relative_to_absolute[relative] = (self.player_index + relative) % n_players
+        self.absolute_to_relative = np.empty(n_players, dtype=int)
+        for relative in range(n_players):
+            absolute = self.relative_to_absolute[relative]
+            self.absolute_to_relative[absolute] = relative
 
-    @property
-    def game(self):
-        return self.manager.game
-
-    @property
-    def player_index(self):
-        return self.manager.player_index
+    def _game(self, index):
+        return self.manager.games[index]
 
     @property
     def a_conf(self):
@@ -26,21 +34,13 @@ class AgentUtility(ABC):
     @property
     def g_conf(self):
         return self.manager.g_conf
-
-    @property
-    def absolute_to_relative(self):
-        return self.manager.absolute_to_relative
-    
-    @property
-    def relative_to_absolute(self):
-        return self.manager.relative_to_absolute
     
     # ====================================================================================================
     # REWARD
     # ====================================================================================================
 
-    def _current_round_scores(self):
-        player_tricks = self.game.round.tricks_won[self.relative_to_absolute]
+    def _current_round_scores(self, game_index):
+        player_tricks = self._game(game_index).round.tricks_won[self.relative_to_absolute]
         correct = self.player_bids == player_tricks
         return np.where(
             correct,
@@ -48,8 +48,8 @@ class AgentUtility(ABC):
             self.g_conf['points_for_unsuccessfuly_trick'] * np.abs(self.player_bids - player_tricks)
         )
 
-    def reward(self):
-        scores = self.game.scores[self.relative_to_absolute]
+    def reward(self, game_index):
+        scores = self._game(game_index).scores[self.relative_to_absolute]
         differences = scores[0] - np.delete(scores, 0)
         round_scores = self._current_round_scores()
         round_differences = round_scores[0] - np.delete(round_scores, 0)
@@ -63,38 +63,38 @@ class AgentUtility(ABC):
     # ====================================================================================================
 
     @abstractmethod
-    def generate_state_rerpesentation(self):
+    def _generate_state_rerpesentation(self, game_index):
         pass
 
     def input_output_length(self):
-        state = self.generate_state_rerpesentation()
-        mask  = self._get_legal_move_mask()
-        return (len(state), len(mask))
+        state = self._generate_state_rerpesentation(game_index=0)
+        mask  = self._get_legal_move_mask(game_index=0) # input, output lengths are constant
+        return len(state), len(mask)
 
     # ====================================================================================================
     # CARD AND TRICK ENCODING
     # ====================================================================================================
 
-    def _encode_hand(self):
-        current_hand = self.game.get_hand(self.player_index)
-        encoded_hand = np.zeros((2, len(self.game.deck.deck)), dtype=np.float32)
+    def _encode_hand(self, game_index):
+        current_hand = self._game(game_index).get_hand(self.player_index)
+        encoded_hand = np.zeros((2, len(self._game(game_index).deck.deck)), dtype=np.float32)
         encoded_hand[0, current_hand ==  1] = 1
         encoded_hand[1, current_hand ==  0] = 1
         return encoded_hand
     
-    def _encode_trump(self):
-        trump = self.game.round.trump
-        encoded_trump = np.zeros(self.game.deck.d_conf["n_suits"] + 1, dtype=np.float32) # + 1 for wizard suit 
+    def _encode_trump(self, game_index):
+        trump = self._game(game_index).round.trump
+        encoded_trump = np.zeros(self._game(game_index).deck.d_conf["n_suits"] + 1, dtype=np.float32) # + 1 for wizard suit 
         return encoded_trump
     
     # ====================================================================================================
     # PLAYER ENCODING
     # ====================================================================================================
 
-    def _encode_bids(self):
-        max_players = self.game.max_players
+    def _encode_bids(self, game_index):
+        max_players = self._game(game_index).max_players
         encoded_bids = np.zeros((max_players, 2), dtype=np.float32)
-        bids = self.game.round.bids
+        bids = self._game(game_index).round.bids
         for player, bid in enumerate(bids):
             if bid is None:
                 encoded_bids[player, 1] = 1
@@ -102,23 +102,23 @@ class AgentUtility(ABC):
                 encoded_bids[player, 0] = bid
         return encoded_bids[self.relative_to_absolute]
 
-    def _encode_player_mask(self):
-        max_players = self.game.max_players
-        n_players   = self.game.n_players
+    def _encode_player_mask(self, game_index):
+        max_players = self._game(game_index).max_players
+        n_players   = self._game(game_index).n_players
         player_mask = np.zeros(max_players, dtype=np.float32)
         player_mask[:n_players] = 1
         return player_mask
 
-    def _encode_priority(self):
-        max_players = self.game.max_players
+    def _encode_priority(self, game_index):
+        max_players = self._game(game_index).max_players
         priority_encoding = np.zeros(max_players, dtype=np.float32)
-        priority_index = self.game.round.priority
+        priority_index = self._game(game_index).round.priority
         relative_priority = self.absolute_to_relative[priority_index]
         priority_encoding[relative_priority] = 1
         return priority_encoding
 
-    def _encode_score(self):
-        scores = np.asarray(self.game.scores, dtype=np.float32)
+    def _encode_score(self, game_index):
+        scores = np.asarray(self._game(game_index).scores, dtype=np.float32)
         min_score = scores.min()
         max_score = scores.max()
         if max_score == min_score:
@@ -131,19 +131,19 @@ class AgentUtility(ABC):
     # GAME PROGRESS ENCODING
     # ====================================================================================================
 
-    def _encode_fraction_rounds(self):
+    def _encode_fraction_rounds(self, game_index):
         encoded_fraction_rounds    = np.zeros(1, dtype=np.float32)
-        encoded_fraction_rounds[0] = self.game.round_number / self.game.total_rounds
+        encoded_fraction_rounds[0] = self._game(game_index).round_number / self._game(game_index).total_rounds
         return encoded_fraction_rounds
 
     def _encode_total_n_rounds(self):
         encoded_total_rounds    = np.zeros(1, dtype=np.float32)
-        encoded_total_rounds[0] = self.game.total_rounds
+        encoded_total_rounds[0] = self._game(game_index).total_rounds
         return encoded_total_rounds
 
     def _encode_rounds_left(self):
         encoded_rounds_left    = np.zeros(1, dtype=np.float32)
-        encoded_rounds_left[0] = (self.game.total_rounds - self.game.round_number) / self.game.total_rounds
+        encoded_rounds_left[0] = (self._game(game_index).total_rounds - self._game(game_index).round_number) / self._game(game_index).total_rounds
         return encoded_rounds_left
     
     # ====================================================================================================
@@ -151,11 +151,12 @@ class AgentUtility(ABC):
     # ====================================================================================================
 
     @abstractmethod
-    def _get_legal_move_mask(self):
+    def _get_legal_move_mask(self, game_index):
         pass
 
-    def get_move(self, q_values):
-        epsilon = self.a_conf['epsilon']
+    def get_move(self, game_index, epsilon):
+        state = self._generate_state_rerpesentation(game_index=game_index)
+        q_values = None #TODO
         mask = self._get_legal_move_mask()
         legal_moves = np.where(mask == 1)[0]
         if np.random.random() < epsilon:

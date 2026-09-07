@@ -1,10 +1,11 @@
 import torch
+import torch.nn as nn
 
 class BiddingModel(nn.Module):
     def __init__(self, input_size, output_size):
         super().__init__()
 
-        sizes = [input_size, input_size * 2, input_size, output_size]
+        sizes = [input_size, 2 ** 9, 2 ** 8, output_size]
         layers = []
         for in_size, out_size in zip(sizes[:-1], sizes[1:]):
             layers.extend([
@@ -17,4 +18,3 @@ class BiddingModel(nn.Module):
     
     def forward(self, x):
         return self.model(x)
-        
