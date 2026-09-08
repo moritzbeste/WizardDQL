@@ -9,8 +9,8 @@ from src.models_utility.tricking_agent_utility import TrickingAgentUtility
 from src.models_utility.bidding_agent_utility  import BiddingAgentUtility
 from src.models_utility.trump_agent_utility    import TrumpAgentUtility
 
-from src.game import Game
-from sec.deck import Deck
+from src.game import Game, RoundState
+from src.deck import Deck
 
 @dataclass
 class PlayerAgents:
@@ -37,33 +37,58 @@ class AgentManagement:
         self.n_games    = n_games
         self.epsilon    = 1.0
 
-        self.a_conf = get_config('agent')
-        self.g_conf = get_config('game')
+        self.a_conf      = get_config('agent')
+        self.g_conf      = get_config('game')
+        self.max_players = self.g_conf['max_players']
 
         self.deck = Deck(n_players=n_players, seed=self.g_conf['seed_deck'])
+        
+        self.games = np.array(
+            [Game(n_players=self.n_players, deck=self.deck)
+            for _ in range(self.n_games)], dtype=object)
 
-        self.games = [
-            Game(n_players=self.n_players, deck=self.deck)
-            for _ in range(self.n_games)]
-
-        self.players = [
-            PlayerAgents(
-                trump=TrumpAgentUtility(self, player_index=i),
-                bidding=BiddingAgentUtility(self, player_index=i),
-                tricking=TrickingAgentUtility(self, player_index=i),
-            ) for i in range(self.n_players)]
+        self.agents = PlayerAgents(
+            trump=TrumpAgentUtility(self),
+            bidding=BiddingAgentUtility(self), 
+            tricking=TrickingAgentUtility(self))
+        self.relative_to_absolute = []
+        self.absolute_to_relative = []
+        for i in range(n_players):
+            rta, atr = self._get_index_conversion(player_index=i)
+            self.relative_to_absolute.append(rta)
+            self.absolute_to_relative.append(atr)
     
-    def _get_agent(self, player_index, agent):
-        return getattr(self.players[player_index], agent)
+    def _get_index_conversion(self, player_index):
+        relative_to_absolute = np.full(self.max_players, -1, dtype=int)
+        for relative in range(self.n_players):
+            relative_to_absolute[relative] = (player_index + relative) % self.n_players
+        absolute_to_relative = np.empty(self.n_players, dtype=int)
+        for relative in range(self.n_players):
+            absolute = relative_to_absolute[relative]
+            absolute_to_relative[absolute] = relative
+        return relative_to_absolute, absolute_to_relative
     
     # ====================================================================================================
     # GAME MANAGEMENT
     # ====================================================================================================
 
-    def _retrieve_moves(self, game_index, agent_type):
-        game = self.games[game_index]
-        moves = np.zeros(self.n_players)
-        for player in range(self.n_players):
-            agent = self._get_agent(player, agent_type)
-            moves[player] = agent.get_move(game, player, self.epsilon)
-        return moves
+    def _get_priorities(self, indices=None):
+        if indices is None:
+            return np.array([game.round.priority for game in self.games], dtype=np.int16)
+        else:
+            return np.array([game.round.priority for game in self.games[indices]], dtype=np.int16)
+
+    def _get_games_requiring_trump(self):
+        states     = np.array([game.round.state for game in self.games], dtype=np.int16)
+        indices    = np.flatnonzero(states == RoundState.CHOOSE_TRUMP)
+        priorities = self._get_priorities(indices=indices)
+        return indices, priorities
+    
+    def _choose_trumps(self):
+        game_indices, priorities = self._get_games_requiring_trump()
+        chosen_trumps = self.agents.trump.get_moves(game_indices=game_indices, priorities=priorities, epsilon=self.epsilon)
+        for game_index, player, chosen_trump in zip(game_indices, priorities, chosen_trumps):
+            game = self.games[game_index]
+            game.round.pick_trump_color(player_index=player, suit=chosen_trump)
+
+    

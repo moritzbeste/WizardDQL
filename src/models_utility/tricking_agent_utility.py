@@ -9,11 +9,11 @@ class TrickingAgentUtility(AgentUtility):
     # INITIALIZATION
     # ====================================================================================================
 
-    def __init__(self, manager, player_index):
-        super().__init__(manager=manager, player_index=player_index)
+    def __init__(self, manager):
+        super().__init__(manager=manager)
 
-    def _compute_player_weights(self, game_index):
-        scores = self._game(game_index).scores[self.relative_to_absolute]
+    def _compute_player_weights(self, game_index, player_index):
+        scores = self._game(game_index).scores[self._relative_to_absolute(player_index=player_index)]
         temp = self.a_conf['weight_temperature']
         weights = np.exp((scores - np.max(scores)) / temp)
         weights /= np.sum(weights)
@@ -24,16 +24,16 @@ class TrickingAgentUtility(AgentUtility):
     # ====================================================================================================
     
     # overwrite
-    def reward(self, game_index):
+    def reward(self, game_index, player_index):
         round_scores = self._current_round_scores()
-        player_weights = _compute_player_weights(game_index)
+        player_weights = _compute_player_weights(game_index, player_index)
         return round_scores[0] * self.player_weights[0] - np.sum(np.delete(round_scores, 0) * np.delete(self.player_weights, 0))
 
     # ====================================================================================================
     # STATE REPRESENTATION
     # ====================================================================================================
 
-    def _generate_state_rerpesentation(self, game_index):
+    def _generate_state_rerpesentation(self, game_index, player_index):
         # one hot encoding of the state of each card 
         # - (in agents hand, already played, unknown (in opponents hand or in the deck))
         # - shape: n_states * n_cards (3, 60)
@@ -82,19 +82,19 @@ class TrickingAgentUtility(AgentUtility):
         # rounds left
         # - shape: scalar (1,)
 
-        encoded_hand            = self._encode_hand(game_index=game_index)
+        encoded_hand            = self._encode_hand(game_index=game_index, player_index=player_index)
         encoded_player_mask     = self._encode_player_mask(game_index=game_index)
-        encoded_priority        = self._encode_priority(game_index=game_index)
+        encoded_priority        = self._encode_priority(game_index=game_index, player_index=player_index)
         encoded_played          = self._encode_played_cards(game_index=game_index)
         encoded_recency         = self._encode_card_recency(game_index=game_index)
         encoded_trump           = self._encode_trump(game_index=game_index)
         encoded_leading_suit    = self._encode_leading_suit(game_index=game_index)
-        encoded_scores          = self._encode_score(game_index=game_index)
+        encoded_scores          = self._encode_score(game_index=game_index, player_index=player_index)
         encoded_fraction_rounds = self._encode_fraction_rounds(game_index=game_index)
         encoded_fraction_tricks = self._encode_fraction_tricks(game_index=game_index)
-        encoded_bids            = self._encode_bids(game_index=game_index)
-        encoded_wins            = self._encode_tricks_won(game_index=game_index)
-        encoded_n_rounds        = self._encode_total_n_rounds(game_index=game_index)
+        encoded_bids            = self._encode_bids(game_index=game_index, player_index=player_index)
+        encoded_wins            = self._encode_tricks_won(game_index=game_index, player_index=player_index)
+        encoded_rounds          = self._encode_total_rounds(game_index=game_index)
         encoded_rounds_left     = self._encode_rounds_left(game_index=game_index)
 
         state = np.concatenate([
@@ -110,7 +110,7 @@ class TrickingAgentUtility(AgentUtility):
             encoded_fraction_tricks,
             encoded_bids.flatten(),
             encoded_wins,
-            encoded_n_rounds,
+            encoded_rounds,
             encoded_rounds_left,
         ])
 
@@ -127,8 +127,8 @@ class TrickingAgentUtility(AgentUtility):
     # ====================================================================================================
 
     # overwrite
-    def _encode_hand(self, game_index):
-        current_hand = self._game(game_index).get_hand(self.player_index)
+    def _encode_hand(self, game_index, player_index):
+        current_hand = self._game(game_index).get_hand(player_index)
         encoded_hand = np.zeros((3, len(self._game(game_index).deck.deck)), dtype=np.float32)
         encoded_hand[0, current_hand ==  1] = 1
         encoded_hand[1, current_hand == -1] = 1
@@ -164,12 +164,12 @@ class TrickingAgentUtility(AgentUtility):
     # PLAYER ENCODING
     # ====================================================================================================
 
-    def _encode_tricks_won(self, game_index):
+    def _encode_tricks_won(self, game_index, player_index):
         max_players = self._game(game_index).max_players
         encoded_wins = np.zeros(max_players, dtype=np.float32)
         wins = self._game(game_index).round.tricks_won
         encoded_wins[:len(wins)] = wins
-        return encoded_wins[self.relative_to_absolute]
+        return encoded_wins[self._relative_to_absolute(player_index=player_index)]
 
     # ====================================================================================================
     # ROUND PROGRESS ENCODING
@@ -184,8 +184,8 @@ class TrickingAgentUtility(AgentUtility):
     # MOVE MASK
     # ====================================================================================================
 
-    def _get_legal_move_mask(self, game_index):
-        hand = self._game(game_index).round.player_hands[self.player_index]
+    def _get_legal_move_mask(self, game_index, player_index):
+        hand = self._game(game_index).round.player_hands[player_index]
         cards = np.where(hand == 1)[0]
         mask = np.zeros(len(hand), dtype=np.int8)
         for card in cards:

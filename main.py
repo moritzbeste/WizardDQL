@@ -6,8 +6,7 @@ import numpy as np
 if __name__ == "__main__":
     game = Game(n_players=3)
     game.setup_round()
-    print(game.round.player_hands)
-    game.scores[:] = [10, 20, 0]
 
-    agent = AgentManagement()
+    agent = AgentManagement(n_games=100)
+    agent.agents.bidding._generate_state_rerpesentation(0, 0)
     

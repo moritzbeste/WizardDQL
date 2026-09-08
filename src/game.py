@@ -3,7 +3,7 @@ import numpy as np
 import random
 import warnings
 from pathlib import Path
-from enum import Enum, auto
+from enum import IntEnum
 
 from src.deck import Deck
 from src.utility import get_config
@@ -12,10 +12,10 @@ from src.utility import get_config
 # GAME STATE
 # ====================================================================================================
 
-class GameState(Enum):
-    SETUP    = auto()
-    ROUND    = auto()
-    FINISHED = auto()
+class GameState(IntEnum):
+    SETUP    = 0
+    ROUND    = 1
+    FINISHED = 2
 
 
 class Game:
@@ -43,7 +43,7 @@ class Game:
         self._advance_state()
 
     def reset_game(self):
-        self.priority     = self.rng.integers(self.n_players)
+        self.priority     = self.rng.integers(low=0, high=self.n_players)
         self.round_number = 1
         self.round        = None
         self.scores[:]    = 0.0
@@ -113,12 +113,12 @@ class Game:
 # STATE
 # ====================================================================================================
 
-class RoundState(Enum):
-    SETUP        = auto()
-    CHOOSE_TRUMP = auto()
-    BIDDING      = auto()
-    TRICK        = auto()
-    FINISHED     = auto()
+class RoundState(IntEnum):
+    SETUP        = 0
+    CHOOSE_TRUMP = 1
+    BIDDING      = 2
+    TRICK        = 3
+    FINISHED     = 4
 
 
 class _Round:
