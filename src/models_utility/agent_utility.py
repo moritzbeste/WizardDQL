@@ -147,24 +147,21 @@ class AgentUtility(ABC):
     def _get_legal_move_mask(self, game_index, player_index):
         pass
 
-    def get_moves(self, game_indices, priorities, epsilon):
-        gap = zip(game_indices, priorities)
-        states = np.stack([self._generate_state_rerpesentation(g, p) for g, p in gap])
-        masks = np.stack([self._get_legal_move_mask(g, p) for g, p in gap])
-
+    def get_moves(self, priorities, epsilon, game_indices=None):
+        if game_indices is None:
+            game_indices = range(len(priorities))
+        pairs  = list(zip(game_indices, priorities))
+        states = np.stack([self._generate_state_rerpesentation(g, p) for g, p in pairs])
+        masks  = np.stack([self._get_legal_move_mask(g, p) for g, p in pairs])
         states = torch.from_numpy(states).float()
         with torch.no_grad():
-            q_values = self.model(states)
-        q_values = q_values.numpy()
-
+            q_values = self.model(states).numpy()
         actions = []
         for q, mask in zip(q_values, masks):
             legal_moves = np.where(mask == 1)[0]
             if np.random.random() < epsilon:
                 action = np.random.choice(legal_moves)
             else:
-                masked_q = np.where(mask, q, -np.inf)
-                action = np.argmax(masked_q)
+                action = np.argmax(np.where(mask, q, -np.inf))
             actions.append(action)
-
         return actions

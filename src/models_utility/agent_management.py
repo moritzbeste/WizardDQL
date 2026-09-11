@@ -79,16 +79,50 @@ class AgentManagement:
             return np.array([game.round.priority for game in self.games[indices]], dtype=np.int16)
 
     def _get_games_requiring_trump(self):
-        states     = np.array([game.round.state for game in self.games], dtype=np.int16)
-        indices    = np.flatnonzero(states == RoundState.CHOOSE_TRUMP)
-        priorities = self._get_priorities(indices=indices)
-        return indices, priorities
+        states  = np.array([game.round.state for game in self.games], dtype=np.int16)
+        indices = np.flatnonzero(states == RoundState.CHOOSE_TRUMP)
+        return indices
     
     def _choose_trumps(self):
-        game_indices, priorities = self._get_games_requiring_trump()
-        chosen_trumps = self.agents.trump.get_moves(game_indices=game_indices, priorities=priorities, epsilon=self.epsilon)
+        game_indices = self._get_games_requiring_trump()
+        priorities = self._get_priorities(indices=game_indices)
+        chosen_trumps = self.agents.trump.get_moves(priorities=priorities, epsilon=self.epsilon, game_indices=game_indices)
         for game_index, player, chosen_trump in zip(game_indices, priorities, chosen_trumps):
             game = self.games[game_index]
             game.round.pick_trump_color(player_index=player, suit=chosen_trump)
-
+        
+    def _choose_bids(self):
+        priorities = self._get_priorities() # indices = None to get priorities for all games
+        chosen_bids = self.agents.bidding.get_moves(priorities=priorities, epsilon=self.epsilon)
+        for game_index, (player, chosen_bid) in enumerate(zip(priorities, chosen_bids)):
+            game = self.games[game_index]
+            game.round.bid(player_index=player, bid=chosen_bid)
     
+    def _orchestrate_all_bids(self):
+        for _ in range(self.n_players):
+            self._choose_bids()
+    
+    def _choose_tricks(self):
+        priorities = self._get_priorities()
+        chosen_tricks = self.agents.tricking.get_moves(priorities=priorities, epsilon=self.epsilon)
+        for game_index, (player, chosen_bid) in enumerate(zip(priorities, chosen_bids)):
+            game = self.games[game_index]
+            game.round.play_card(player_index=player, bid=chosen_bid)
+        
+    def _orchestrate_all_tricks(self):
+        # all games are syncronized and have the same number of tricks corresponding to the round
+        n_tricks = self.games[0].round_number
+        for _ in range(n_tricks):
+            for _ in range(self.n_players):
+                self._choose_tricks()
+    
+    def _orchestrate_full_rounds(self):
+        # choose trumps for games that require a trump
+        self._choose_trumps() # all games are now synced
+        self._orchestrate_all_bids()
+        self._orchestrate_all_tricks()
+    
+    def orchestrate_full_games(self):
+        n_rounds = self.games[0].total_rounds
+        for _ in range(n_rounds):
+            self._orchestrate_full_rounds()
