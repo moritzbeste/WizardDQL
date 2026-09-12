@@ -24,12 +24,13 @@ class Game:
     # INITIALIZATION AND SETUP
     # ====================================================================================================
 
-    def __init__(self, n_players=3, deck=None):
+    def __init__(self, n_players=3, seed=None, deck=None):
         self.g_conf = get_config('game')
         self.min_players, self.max_players = self.get_player_range()
         self.n_players = n_players
         self.state = GameState.SETUP
-        seed = self.g_conf['seed_priority']
+        if seed is None:
+            seed = self.g_conf['seed_priority']
         self.rng = np.random.default_rng(seed)
 
         self.scores = np.zeros(self.n_players, dtype=np.float32)

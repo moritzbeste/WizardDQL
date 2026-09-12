@@ -44,8 +44,8 @@ class AgentManagement:
         self.deck = Deck(n_players=n_players, seed=self.g_conf['seed_deck'])
         
         self.games = np.array(
-            [Game(n_players=self.n_players, deck=self.deck)
-            for _ in range(self.n_games)], dtype=object)
+            [Game(n_players=self.n_players, seed=i, deck=self.deck)
+            for i in range(self.n_games)], dtype=object)
 
         self.agents = PlayerAgents(
             trump=TrumpAgentUtility(self),

@@ -26,7 +26,7 @@ class TrickingAgentUtility(AgentUtility):
     # overwrite
     def reward(self, game_index, player_index):
         round_scores = self._current_round_scores()
-        player_weights = _compute_player_weights(game_index, player_index)
+        player_weights = self._compute_player_weights(game_index, player_index)
         return round_scores[0] * self.player_weights[0] - np.sum(np.delete(round_scores, 0) * np.delete(self.player_weights, 0))
 
     # ====================================================================================================
